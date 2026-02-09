@@ -1,0 +1,60 @@
+# Commodity Configuration
+# List of commodities with metadata
+
+commodities:
+  - id: crude_oil
+    name: "Crude Oil (WTI)"
+    unit: USD/barrel
+    source: file
+    file_path: data/raw/crude_oil.csv
+    timezone: UTC
+    market: US
+    type: futures  # spot or futures
+    
+  - id: gold
+    name: "Gold"
+    unit: USD/oz
+    source: file
+    file_path: data/raw/gold.csv
+    timezone: UTC
+    market: US
+    type: spot
+
+  - id: corn
+    name: "Corn"
+    unit: USD/bushel
+    source: file
+    file_path: data/raw/datacorn.csv
+    timezone: UTC
+    market: US
+    type: futures
+
+  - id: soybean
+    name: "Soybean"
+    unit: USD/bushel
+    source: file
+    file_path: data/raw/soybean.csv
+    timezone: UTC
+    market: US
+    type: futures
+
+  - id: coffee
+    name: "Coffee Arabica"
+    unit: USD/lb
+    source: file
+    file_path: data/raw/coffee.csv
+    timezone: UTC
+    market: US
+    type: futures
+
+# Schema definition
+schema:
+  date_column: date
+  close_column: close
+  date_format: "%Y-%m-%d"
+
+# Validation thresholds
+validation:
+  max_missing_days_pct: 0.05  # Max 5% missing days
+  outlier_std_threshold: 4.0   # Flag if > 4 std from rolling mean
+  min_history_days: 252        # Minimum 1 year of data

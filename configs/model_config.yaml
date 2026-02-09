@@ -1,0 +1,77 @@
+# Model Configuration
+
+# Forecast settings
+forecast:
+  horizons: [1, 7, 30]  # Days ahead to predict
+  target: close         # close | log_close | return
+  frequency: daily
+  
+# Feature engineering
+features:
+  lag_days: [1, 2, 3, 5, 7, 14, 21, 30]
+  rolling_windows: [7, 14, 30, 60]
+  rolling_stats: [mean, std, min, max]
+  calendar_features: true
+  volatility_features: true
+
+# Train/test split
+backtesting:
+  method: walk_forward  # walk_forward | expanding | rolling
+  initial_train_days: 504  # 2 years
+  test_days: 30           # 1 month per fold
+  step_days: 30           # Step forward 1 month
+  
+# Model hyperparameters
+models:
+  naive:
+    enabled: true
+    
+  seasonal_naive:
+    enabled: true
+    season_length: 7  # Weekly seasonality
+    
+  arima:
+    enabled: true
+    auto_order: true
+    max_p: 5
+    max_d: 2
+    max_q: 5
+    
+  ets:
+    enabled: false
+    
+  xgboost:
+    enabled: true
+    params:
+      n_estimators: 500
+      max_depth: 6
+      learning_rate: 0.05
+      subsample: 0.8
+      colsample_bytree: 0.8
+      early_stopping_rounds: 50
+      
+  lightgbm:
+    enabled: true
+    params:
+      n_estimators: 500
+      max_depth: 6
+      learning_rate: 0.05
+      subsample: 0.8
+      colsample_bytree: 0.8
+      early_stopping_rounds: 50
+
+# Evaluation metrics
+evaluation:
+  primary_metric: mase  # mae | rmse | mape | mase | smape
+  metrics: [mae, rmse, mape, mase, smape]
+
+# MLflow tracking
+mlflow:
+  tracking_uri: mlruns
+  experiment_name: commodity_forecast
+  
+# Inference settings
+inference:
+  batch_size: 100
+  output_format: parquet  # parquet | csv | db
+  output_path: data/predictions
