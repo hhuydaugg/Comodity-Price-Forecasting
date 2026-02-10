@@ -94,7 +94,7 @@ class CommodityLoader:
         suffix = file_path.suffix.lower()
         
         if suffix == ".csv":
-            df = pd.read_csv(file_path)
+            df = pd.read_csv(file_path, comment="#")
         elif suffix in [".parquet", ".pq"]:
             df = pd.read_parquet(file_path)
         else:

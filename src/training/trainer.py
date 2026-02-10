@@ -20,6 +20,7 @@ from src.ingestion.loader import CommodityLoader
 from src.ingestion.validator import DataValidator, validate_data
 from src.preprocessing.cleaner import DataCleaner
 from src.preprocessing.transformer import TargetTransformer
+from src.preprocessing.splitter import TimeSeriesSplitter
 from src.features.generator import FeatureGenerator
 from src.models.baseline import get_baseline_models
 from src.models.ml import XGBoostForecaster, LightGBMForecaster
@@ -64,13 +65,21 @@ class Trainer:
         self.loader = CommodityLoader(config_path)
         self.validator = DataValidator(config_path)
         self.cleaner = DataCleaner(
-            frequency="business",
+            frequency="auto",  # Auto-detect calendar vs business days
             fill_method="ffill",
-            max_gap_days=5,
+            max_gap_days=10,
         )
         self.feature_generator = FeatureGenerator(
             lag_days=self.model_config.get("features", {}).get("lag_days", [1, 2, 7, 14, 30]),
             rolling_windows=self.model_config.get("features", {}).get("rolling_windows", [7, 14, 30]),
+        )
+        
+        # Train/test split config
+        split_config = self.model_config.get("train_test_split", {})
+        self.splitter = TimeSeriesSplitter(
+            train_ratio=split_config.get("train_ratio", 0.8),
+            min_test_days=split_config.get("min_test_days", 30),
+            gap_days=split_config.get("gap_days", 0),
         )
         
         # Target transformation
@@ -171,8 +180,8 @@ class Trainer:
         # Prepare data
         df = self.prepare_data(commodity_id)
         
-        if len(df) < 100:
-            raise ValueError(f"Not enough data for {commodity_id}: {len(df)} rows")
+        if len(df) < 60:
+            raise ValueError(f"Not enough data for {commodity_id}: {len(df)} rows (need >= 60)")
         
         # Get feature columns (excluding metadata)
         feature_cols = [c for c in self.feature_generator.get_feature_names()
@@ -235,14 +244,15 @@ class Trainer:
         # Prepare data
         df_clean = df.dropna(subset=feature_cols + ["close"]).copy()
         
-        if len(df_clean) < 200:
+        if len(df_clean) < 100:
             logger.warning(f"Not enough clean data for ML: {len(df_clean)} rows")
             return {"error": "Insufficient data"}
         
-        # Split for training
-        train_size = int(len(df_clean) * 0.8)
-        train_df = df_clean.iloc[:train_size]
-        test_df = df_clean.iloc[train_size:]
+        # Use TimeSeriesSplitter for proper chronological split
+        split_result = self.splitter.split(df_clean)
+        train_df = split_result.train_df
+        test_df = split_result.test_df
+        logger.info(f"Train/test split:\n{split_result.summary()}")
         
         X_train = train_df[feature_cols]
         y_train = train_df["close"]

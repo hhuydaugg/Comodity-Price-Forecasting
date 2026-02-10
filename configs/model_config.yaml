@@ -15,9 +15,16 @@ features:
   volatility_features: true
 
 # Train/test split
+train_test_split:
+  train_ratio: 0.8           # 80% train, 20% test
+  min_test_days: 30          # Minimum test set size
+  gap_days: 0                # Gap between train and test (avoid leakage)
+  method: chronological      # chronological | walk_forward
+
+# Backtesting
 backtesting:
   method: walk_forward  # walk_forward | expanding | rolling
-  initial_train_days: 504  # 2 years
+  initial_train_days: 252  # 1 year (lowered for shorter datasets like PVC)
   test_days: 30           # 1 month per fold
   step_days: 30           # Step forward 1 month
   
@@ -60,6 +67,30 @@ models:
       colsample_bytree: 0.8
       early_stopping_rounds: 50
 
+  catboost:
+    enabled: true
+    params:
+      iterations: 500
+      depth: 6
+      learning_rate: 0.05
+      l2_leaf_reg: 3.0
+      subsample: 0.8
+      early_stopping_rounds: 50
+
+  elasticnet:
+    enabled: true
+    params:
+      alpha: 1.0
+      l1_ratio: 0.5
+      max_iter: 5000
+
+  svr:
+    enabled: true
+    params:
+      kernel: rbf
+      C: 100.0
+      epsilon: 0.1
+
 # Evaluation metrics
 evaluation:
   primary_metric: mase  # mae | rmse | mape | mase | smape
@@ -75,3 +106,8 @@ inference:
   batch_size: 100
   output_format: parquet  # parquet | csv | db
   output_path: data/predictions
+
+# Future forecast settings
+future_forecast:
+  n_days: 30              # Default days to forecast
+  confidence_level: 0.95  # 95% confidence interval

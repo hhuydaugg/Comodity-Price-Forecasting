@@ -164,8 +164,29 @@ class FeatureGenerator:
     
     def _add_volatility_features(self, df: pd.DataFrame, target: str) -> pd.DataFrame:
         """Add volatility-based features."""
+        # Check if we have enough data
+        if len(df) < 2:
+            logger.warning(f"Not enough data for volatility features: {len(df)} rows")
+            # Add empty columns to maintain schema
+            for window in [7, 14, 30]:
+                df[f"volatility_{window}"] = np.nan
+            df["volatility_ewm_14"] = np.nan
+            for window in [7, 14]:
+                df[f"range_pct_{window}"] = np.nan
+            return df
+        
         # Calculate returns for volatility
-        returns = df[target].pct_change()
+        returns = df[target].pct_change(fill_method=None)
+        
+        # Check if returns has valid data
+        if returns.notna().sum() < 2:
+            logger.warning(f"Not enough valid returns for volatility calculation")
+            for window in [7, 14, 30]:
+                df[f"volatility_{window}"] = np.nan
+            df["volatility_ewm_14"] = np.nan
+            for window in [7, 14]:
+                df[f"range_pct_{window}"] = np.nan
+            return df
         
         # Rolling volatility (std of returns)
         for window in [7, 14, 30]:
@@ -182,12 +203,40 @@ class FeatureGenerator:
         
         return df
     
+    
     def _add_return_features(self, df: pd.DataFrame, target: str) -> pd.DataFrame:
         """Add return-based features."""
+        # Check if we have enough data
+        if len(df) < 2:
+            logger.warning(f"Not enough data for return features: {len(df)} rows")
+            # Add empty columns to maintain schema
+            df["return_1d"] = np.nan
+            df["return_5d"] = np.nan
+            df["return_20d"] = np.nan
+            df["return_1d_lag1"] = np.nan
+            df["return_5d_lag1"] = np.nan
+            df["momentum_5d"] = np.nan
+            df["momentum_20d"] = np.nan
+            df["consecutive_direction_lag1"] = np.nan
+            return df
+        
+        # Check if target column has valid data
+        if df[target].notna().sum() < 2:
+            logger.warning(f"Not enough valid data in target column for return calculation")
+            df["return_1d"] = np.nan
+            df["return_5d"] = np.nan
+            df["return_20d"] = np.nan
+            df["return_1d_lag1"] = np.nan
+            df["return_5d_lag1"] = np.nan
+            df["momentum_5d"] = np.nan
+            df["momentum_20d"] = np.nan
+            df["consecutive_direction_lag1"] = np.nan
+            return df
+        
         # Simple returns
-        df["return_1d"] = df[target].pct_change(1)
-        df["return_5d"] = df[target].pct_change(5)
-        df["return_20d"] = df[target].pct_change(20)
+        df["return_1d"] = df[target].pct_change(1, fill_method=None)
+        df["return_5d"] = df[target].pct_change(5, fill_method=None)
+        df["return_20d"] = df[target].pct_change(20, fill_method=None)
         
         # Lagged returns (for features, not target)
         df["return_1d_lag1"] = df["return_1d"].shift(1)
@@ -214,7 +263,8 @@ class FeatureGenerator:
     def _get_feature_names(self, df: pd.DataFrame) -> List[str]:
         """Get list of generated feature column names."""
         exclude_cols = ["date", "close", "commodity_id", "target", 
-                       "is_original", "is_imputed", "is_outlier", "z_score", "missing_streak"]
+                       "is_original", "is_imputed", "is_outlier", "z_score", 
+                       "missing_streak", "consecutive_direction"]
         return [c for c in df.columns if c not in exclude_cols]
     
     def get_feature_names(self) -> List[str]:

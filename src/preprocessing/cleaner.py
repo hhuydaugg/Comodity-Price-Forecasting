@@ -18,16 +18,18 @@ class DataCleaner:
     
     def __init__(
         self,
-        frequency: Literal["calendar", "business"] = "business",
+        frequency: Literal["calendar", "business", "auto"] = "auto",
         fill_method: Literal["ffill", "none", "interpolate"] = "ffill",
-        max_gap_days: int = 5,
+        max_gap_days: int = 10,
     ):
         """
         Initialize the data cleaner.
         
         Args:
-            frequency: Alignment frequency - 'calendar' for all days,
-                      'business' for business days only
+            frequency: Alignment frequency:
+                      - 'calendar': all days (including weekends)
+                      - 'business': business days only (Mon-Fri)
+                      - 'auto': detect from data (if >10% weekend dates → calendar)
             fill_method: How to handle missing values:
                         - 'ffill': forward fill (recommended)
                         - 'none': keep as NaN
@@ -91,15 +93,44 @@ class DataCleaner:
         
         return df
     
+    def _detect_frequency(self, df: pd.DataFrame) -> str:
+        """
+        Auto-detect whether data is on calendar or business day frequency.
+        
+        If >10% of dates fall on weekends (Sat/Sun), assume calendar days.
+        Otherwise, assume business days.
+        """
+        if "date" not in df.columns:
+            return "business"
+        
+        dates = pd.to_datetime(df["date"])
+        weekend_count = dates.dt.dayofweek.isin([5, 6]).sum()
+        weekend_pct = weekend_count / len(dates) if len(dates) > 0 else 0
+        
+        if weekend_pct > 0.10:
+            logger.info(f"Auto-detected calendar frequency ({weekend_pct:.1%} weekend dates)")
+            return "calendar"
+        else:
+            logger.info(f"Auto-detected business frequency ({weekend_pct:.1%} weekend dates)")
+            return "business"
+    
     def _align_frequency(self, df: pd.DataFrame) -> pd.DataFrame:
         """Align data to target frequency."""
+        # Store commodity_id if it exists
+        commodity_id = df["commodity_id"].iloc[0] if "commodity_id" in df.columns else None
+        
+        # Auto-detect frequency if needed
+        freq = self.frequency
+        if freq == "auto":
+            freq = self._detect_frequency(df)
+        
         df = df.set_index("date")
         
         # Create target date range
         start_date = df.index.min()
         end_date = df.index.max()
         
-        if self.frequency == "business":
+        if freq == "business":
             target_index = pd.bdate_range(start=start_date, end=end_date)
         else:
             target_index = pd.date_range(start=start_date, end=end_date, freq="D")
@@ -107,6 +138,10 @@ class DataCleaner:
         # Reindex to target frequency
         df = df.reindex(target_index)
         df.index.name = "date"
+        
+        # Restore commodity_id for all rows
+        if commodity_id is not None:
+            df["commodity_id"] = commodity_id
         
         return df.reset_index()
     
@@ -186,16 +221,16 @@ class DataCleaner:
 
 def clean_data(
     df: pd.DataFrame,
-    frequency: Literal["calendar", "business"] = "business",
+    frequency: Literal["calendar", "business", "auto"] = "auto",
     fill_method: Literal["ffill", "none", "interpolate"] = "ffill",
-    max_gap_days: int = 5,
+    max_gap_days: int = 10,
 ) -> pd.DataFrame:
     """
     Convenience function to clean data.
     
     Args:
         df: DataFrame to clean
-        frequency: Alignment frequency
+        frequency: Alignment frequency ('auto' detects from data)
         fill_method: Missing value handling method
         max_gap_days: Maximum gap to fill
         

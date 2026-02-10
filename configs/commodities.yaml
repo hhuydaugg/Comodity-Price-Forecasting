@@ -11,11 +11,11 @@ commodities:
     market: US
     type: futures  # spot or futures
     
-  - id: gold
-    name: "Gold"
-    unit: USD/oz
+  - id: coffee
+    name: "Coffee Arabica"
+    unit: USD/lb
     source: file
-    file_path: data/raw/gold.csv
+    file_path: data/raw/datacoffee.csv
     timezone: UTC
     market: US
     type: spot
@@ -29,24 +29,104 @@ commodities:
     market: US
     type: futures
 
-  - id: soybean
-    name: "Soybean"
+  - id: cotton
+    name: "Cotton"
     unit: USD/bushel
     source: file
-    file_path: data/raw/soybean.csv
+    file_path: data/raw/datacotton.csv
     timezone: UTC
     market: US
     type: futures
 
-  - id: coffee
-    name: "Coffee Arabica"
+  - id: gas
+    name: "Gas"
     unit: USD/lb
     source: file
-    file_path: data/raw/coffee.csv
+    file_path: data/raw/datagas.csv
     timezone: UTC
     market: US
     type: futures
 
+  - id: milk
+    name: "Milk"
+    unit: USD/oz
+    source: file
+    file_path: data/raw/datamilk.csv
+    timezone: UTC
+    market: US
+    type: spot
+
+  - id: oil
+    name: "Oil"
+    unit: USD/oz
+    source: file
+    file_path: data/raw/dataoil.csv
+    timezone: UTC
+    market: US
+    type: spot
+
+  - id: pork
+    name: "Pork"
+    unit: USD/oz
+    source: file
+    file_path: data/raw/datapork.csv
+    timezone: UTC
+    market: US
+    type: spot
+
+  - id: pvc
+    name: "Pvc"
+    unit: USD/oz
+    source: file
+    file_path: data/raw/datapvc.csv
+    timezone: UTC
+    market: US
+    type: spot
+
+  - id: rubber
+    name: "Rubber"
+    unit: USD/oz
+    source: file
+    file_path: data/raw/datarubber.csv
+    timezone: UTC
+    market: US
+    type: spot
+
+  - id: rice
+    name: "Rice"
+    unit: USD/oz
+    source: file
+    file_path: data/raw/datarice.csv
+    timezone: UTC
+    market: US
+    type: spot
+
+  - id: steel
+    name: "Steel"
+    unit: USD/oz
+    source: file
+    file_path: data/raw/datasteel.csv
+    timezone: UTC
+    market: US
+    type: spot
+
+  - id: sugar
+    name: "Sugar"
+    unit: USD/oz
+    source: file
+    file_path: data/raw/datasugar.csv
+    timezone: UTC
+    market: US
+    type: spot
+
+  - id: urea
+    name: "Urea"
+    unit: USD/oz
+    source: file
+    file_path: data/raw/dataurea.csv
+    timezone: UTC
+    market: US
+    type: spot
 # Schema definition
 schema:
   date_column: date
@@ -55,6 +135,6 @@ schema:
 
 # Validation thresholds
 validation:
-  max_missing_days_pct: 0.05  # Max 5% missing days
+  max_missing_days_pct: 0.15  # Max 15% missing days (PVC has calendar days incl. weekends)
   outlier_std_threshold: 4.0   # Flag if > 4 std from rolling mean
-  min_history_days: 252        # Minimum 1 year of data
+  min_history_days: 200        # Minimum ~10 months of data (PVC has ~353 rows)
