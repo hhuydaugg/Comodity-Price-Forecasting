@@ -16,6 +16,15 @@ lightgbm>=4.0.0
 # Time series
 pmdarima>=2.0.3
 
+# Deep Learning & Transformers
+torch>=2.1.0
+transformers>=4.36.0
+accelerate>=0.25.0
+einops>=0.7.0
+safetensors>=0.4.0
+huggingface_hub>=0.20.0
+gluonts>=0.14.0
+
 # Experiment tracking
 mlflow>=2.8.0
 

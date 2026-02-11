@@ -13,6 +13,22 @@ import pandas as pd
 import yaml
 from loguru import logger
 
+# Model imports
+from src.models.ml import XGBoostForecaster, LightGBMForecaster
+from src.models.transformer_models import (
+    PatchTSTForecaster, 
+    TSTransformerForecaster, 
+    iTransformerForecaster,
+    DLinearForecaster,
+    AutoformerForecaster,
+)
+from src.models.pretrained_models import (
+    ChronosForecaster,
+    LagLlamaForecaster,
+    MoiraiForecaster,
+    TimerForecaster,
+)
+
 from src.ingestion.loader import CommodityLoader
 from src.preprocessing.cleaner import DataCleaner
 from src.features.generator import FeatureGenerator
@@ -78,10 +94,13 @@ class BatchPredictor:
         Returns:
             True if model loaded successfully
         """
+        # Try both naming conventions: {name}_best.model (ML) and {name}.model (Transformer)
         model_path = self.model_dir / commodity_id / f"{model_type}_best.model"
+        if not model_path.exists():
+            model_path = self.model_dir / commodity_id / f"{model_type}.model"
         
         if not model_path.exists():
-            logger.warning(f"Model not found: {model_path}")
+            logger.warning(f"Model not found: {model_path} (checked _best variant too)")
             return False
         
         try:
@@ -92,6 +111,33 @@ class BatchPredictor:
             elif model_type == "lightgbm":
                 from src.models.ml import LightGBMForecaster
                 model = LightGBMForecaster()
+                model.load(model_path)
+            elif model_type == "patchtst":
+                model = PatchTSTForecaster()
+                model.load(model_path)
+            elif model_type == "tstransformer":
+                model = TSTransformerForecaster()
+                model.load(model_path)
+            elif model_type == "itransformer":
+                model = iTransformerForecaster()
+                model.load(model_path)
+            elif model_type == "chronos":
+                model = ChronosForecaster()
+                model.load(model_path)
+            elif model_type == "dlinear":
+                model = DLinearForecaster()
+                model.load(model_path)
+            elif model_type == "autoformer":
+                model = AutoformerForecaster()
+                model.load(model_path)
+            elif model_type == "lag_llama":
+                model = LagLlamaForecaster()
+                model.load(model_path)
+            elif model_type == "moirai":
+                model = MoiraiForecaster()
+                model.load(model_path)
+            elif model_type == "timer":
+                model = TimerForecaster()
                 model.load(model_path)
             else:
                 logger.error(f"Unknown model type: {model_type}")
@@ -110,6 +156,7 @@ class BatchPredictor:
         commodity_id: str,
         horizons: List[int] = None,
         as_of_date: Optional[str] = None,
+        model_type: str = "xgboost",
     ) -> pd.DataFrame:
         """
         Generate predictions for a single commodity.
@@ -126,9 +173,9 @@ class BatchPredictor:
             horizons = self.model_config.get("forecast", {}).get("horizons", [1, 7, 30])
         
         # Load model if not already loaded
-        if commodity_id not in self._models:
-            if not self.load_model(commodity_id):
-                raise ValueError(f"No model available for {commodity_id}")
+        if commodity_id not in self._models or self._models[commodity_id].name.lower() != model_type.lower():
+            if not self.load_model(commodity_id, model_type):
+                raise ValueError(f"No {model_type} model available for {commodity_id}")
         
         model = self._models[commodity_id]
         
@@ -178,6 +225,7 @@ class BatchPredictor:
         self,
         commodity_ids: Optional[List[str]] = None,
         horizons: List[int] = None,
+        model_type: str = "xgboost",
     ) -> pd.DataFrame:
         """
         Generate predictions for all commodities.
@@ -196,7 +244,7 @@ class BatchPredictor:
         
         for commodity_id in commodity_ids:
             try:
-                preds = self.predict_commodity(commodity_id, horizons)
+                preds = self.predict_commodity(commodity_id, horizons, model_type=model_type)
                 all_predictions.append(preds)
             except Exception as e:
                 logger.error(f"Failed to predict {commodity_id}: {e}")
@@ -250,16 +298,17 @@ def main():
     @click.option("--horizon", "-h", multiple=True, type=int, default=[1, 7, 30])
     @click.option("--output", "-o", default=None, help="Output file path")
     @click.option("--format", "-f", default="parquet", type=click.Choice(["parquet", "csv"]))
-    def predict(commodity, horizon, output, format):
+    @click.option("--model-type", "-m", default="xgboost", help="Model type (xgboost, patchtst, etc.)")
+    def predict(commodity, horizon, output, format, model_type):
         """Generate batch predictions for commodity prices."""
         predictor = BatchPredictor()
         
         horizons = list(horizon)
         
         if commodity == "all":
-            predictions = predictor.predict_all(horizons=horizons)
+            predictions = predictor.predict_all(horizons=horizons, model_type=model_type)
         else:
-            predictions = predictor.predict_commodity(commodity, horizons=horizons)
+            predictions = predictor.predict_commodity(commodity, horizons=horizons, model_type=model_type)
         
         if len(predictions) > 0:
             path = predictor.save_predictions(predictions, output, format)

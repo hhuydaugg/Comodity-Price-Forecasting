@@ -26,6 +26,19 @@ from src.models.baseline import get_baseline_models
 from src.models.ml import XGBoostForecaster, LightGBMForecaster
 from src.evaluation.backtest import TimeSeriesBacktest, compare_models
 from src.evaluation.metrics import calculate_metrics
+from src.models.transformer_models import (
+    PatchTSTForecaster,
+    TSTransformerForecaster,
+    iTransformerForecaster,
+    DLinearForecaster,
+    AutoformerForecaster,
+)
+from src.models.pretrained_models import (
+    ChronosForecaster,
+    LagLlamaForecaster,
+    MoiraiForecaster,
+    TimerForecaster,
+)
 
 
 class Trainer:
@@ -157,7 +170,7 @@ class Trainer:
     def train_commodity(
         self,
         commodity_id: str,
-        model_type: Literal["baseline", "statistical", "ml", "all"] = "all",
+        model_type: Literal["baseline", "statistical", "ml", "transformer", "pretrained", "all"] = "all",
         backtest: bool = True,
         save_model: bool = True,
     ) -> Dict:
@@ -205,6 +218,16 @@ class Trainer:
         if model_type in ["ml", "all"]:
             results["models"]["ml"] = self._train_ml(
                 df, ml_feature_cols, commodity_id, backtest, save_model
+            )
+
+        if model_type in ["transformer", "all"]:
+            results["models"]["transformer"] = self._train_transformers(
+                df, ml_feature_cols, commodity_id, backtest, save_model
+            )
+
+        if model_type in ["pretrained", "all"]:
+            results["models"]["pretrained"] = self._train_pretrained(
+                df, commodity_id, backtest, save_model
             )
         
         return results
@@ -347,6 +370,146 @@ class Trainer:
             }
         
         return results
+
+    def _train_transformers(
+        self,
+        df: pd.DataFrame,
+        feature_cols: List[str],
+        commodity_id: str,
+        backtest: bool,
+        save_model: bool,
+    ) -> Dict:
+        """Train and evaluate Transformer models."""
+        # Prepare data (reuse ML setup)
+        df_clean = df.dropna(subset=feature_cols + ["close"]).copy()
+        if len(df_clean) < 100:
+            return {}
+
+        # Split
+        split_result = self.splitter.split(df_clean)
+        train_df = split_result.train_df
+        test_df = split_result.test_df
+        
+        X_train = train_df[feature_cols]
+        y_train = train_df["close"]
+        X_test = test_df[feature_cols]
+        y_test = test_df["close"]
+
+        results = {}
+        primary_metric = self.model_config.get("evaluation", {}).get("primary_metric", "mae")
+
+        # Map config names to classes
+        model_map = {
+            "patchtst": PatchTSTForecaster,
+            "tstransformer": TSTransformerForecaster,
+            "itransformer": iTransformerForecaster,
+            "dlinear": DLinearForecaster,
+            "autoformer": AutoformerForecaster,
+        }
+
+        trans_config = self.model_config.get("transformer", {})
+        
+        for name, model_cls in model_map.items():
+            cfg = trans_config.get(name, {})
+            if cfg.get("enabled", False):
+                try:
+                    params = cfg.get("params", {})
+                    # Add n_features if not in params (some might need it)
+                    model = model_cls(name=name, **params)
+                    
+                    if self.use_mlflow:
+                        import mlflow
+                        with mlflow.start_run(run_name=f"{name}_{commodity_id}"):
+                            model.fit(y_train, X_train, X_val=X_test, y_val=y_test)
+                            preds = model.predict(X=X_test)
+                            metrics = calculate_metrics(y_test.values, preds, y_train.values)
+                            mlflow.log_params(model.get_params())
+                            mlflow.log_metrics(metrics)
+                    else:
+                        model.fit(y_train, X_train, X_val=X_test, y_val=y_test)
+                        preds = model.predict(X=X_test)
+                        metrics = calculate_metrics(y_test.values, preds, y_train.values)
+                    
+                    results[name] = metrics
+                    
+                    if save_model:
+                        self._save_model_artifact(model, commodity_id, metrics.get(primary_metric))
+
+                except Exception as e:
+                    logger.error(f"{name} training failed: {e}")
+                    results[name] = {"error": str(e)}
+
+        return results
+
+    def _train_pretrained(
+        self,
+        df: pd.DataFrame,
+        commodity_id: str,
+        backtest: bool,
+        save_model: bool,
+    ) -> Dict:
+        """Train and evaluate Pre-trained models."""
+        results = {}
+        # Pre-trained models might handle their own splitting or use the same
+        # For simplicity, we use the same split but they might ignore X
+        df_clean = df.dropna(subset=["close"]).copy()
+        split_result = self.splitter.split(df_clean)
+        train_df = split_result.train_df
+        test_df = split_result.test_df
+        
+        y_train = train_df["close"]
+        y_test = test_df["close"]
+        
+        # Check config
+        pre_config = self.model_config.get("pretrained", {})
+        primary_metric = self.model_config.get("evaluation", {}).get("primary_metric", "mae")
+
+        # Map config names to classes
+        pretrained_map = {
+            "chronos": ChronosForecaster,
+            "lag_llama": LagLlamaForecaster,
+            "moirai": MoiraiForecaster,
+            "timer": TimerForecaster,
+        }
+
+        for name, model_cls in pretrained_map.items():
+            cfg = pre_config.get(name, {})
+            if cfg.get("enabled", False):
+                try:
+                    params = cfg.get("params", {})
+                    model = model_cls(**params)
+                    
+                    # Fit (zero-shot or fine-tune depending on config)
+                    model.fit(y_train)
+                    
+                    # Predict
+                    preds = model.predict(horizon=len(y_test))
+                    
+                    # Pad/trim predictions to match test length
+                    if len(preds) < len(y_test):
+                        preds = np.pad(preds, (0, len(y_test) - len(preds)), constant_values=preds[-1])
+                    elif len(preds) > len(y_test):
+                        preds = preds[:len(y_test)]
+                    
+                    # Metrics
+                    metrics = calculate_metrics(y_test.values, preds, y_train.values)
+                    results[name] = metrics
+                    
+                    if save_model:
+                        self._save_model_artifact(model, commodity_id, metrics.get(primary_metric))
+                except Exception as e:
+                    logger.error(f"{name} training failed: {e}")
+                    results[name] = {"error": str(e)}
+                
+        return results
+
+    def _save_model_artifact(self, model, commodity_id, metric_val):
+        """Helper to save model."""
+        if metric_val is None: return
+        model_dir = self.base_path / "models" / commodity_id
+        model_dir.mkdir(parents=True, exist_ok=True)
+        model_path = model_dir / f"{model.name}.model"
+        model.save(model_path)
     
     def train_all(
         self,
@@ -389,7 +552,7 @@ def main():
     @click.command()
     @click.option("--commodity", "-c", default="all", help="Commodity ID or 'all'")
     @click.option("--model-type", "-m", default="all", 
-                  type=click.Choice(["baseline", "statistical", "ml", "all"]))
+                  type=click.Choice(["baseline", "statistical", "ml", "transformer", "pretrained", "all"]))
     @click.option("--no-mlflow", is_flag=True, help="Disable MLflow tracking")
     @click.option("--no-save", is_flag=True, help="Don't save models")
     def train(commodity, model_type, no_mlflow, no_save):

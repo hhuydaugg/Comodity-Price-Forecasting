@@ -8,12 +8,23 @@ Hệ thống dự đoán giá hàng hóa theo chuẩn MLOps, hỗ trợ nhiều 
 # Install dependencies
 pip install -r requirements.txt
 
-# Run training pipeline
+# Run training pipeline (ML models)
 python -m src.training.trainer --commodity all
+
+# Run training with Transformer models
+python -m src.training.trainer --commodity all --model-type transformer
+
+# Run training with pre-trained foundation models
+python -m src.training.trainer --commodity all --model-type pretrained
 
 # Run batch inference
 python -m src.inference.predictor --date today
+python -m src.inference.predictor --date today --model-type dlinear
 ```
+
+## 📓 Notebooks
+- `notebook_demo_v2.ipynb`: **Advanced** — Transformer models, DLinear, Autoformer, fine-tuning, model comparison
+- `notebook_demo.ipynb`: Original ML demo
 
 ## 📁 Project Structure
 
@@ -27,9 +38,9 @@ commodity_forecast/
 ├── src/
 │   ├── ingestion/    # Data loading & validation
 │   ├── preprocessing/# Data cleaning
-│   ├── features/     # Feature engineering
-│   ├── models/       # Model implementations
-│   ├── training/     # Training pipeline
+│   ├── features/     # Feature engineering + sequence datasets
+│   ├── models/       # Model implementations (ML + Transformer + Pretrained)
+│   ├── training/     # Training pipeline + fine-tuning engine
 │   ├── inference/    # Batch prediction
 │   ├── evaluation/   # Metrics & backtesting
 │   └── monitoring/   # Drift detection
@@ -41,11 +52,52 @@ commodity_forecast/
 
 ## 📊 Supported Models
 
+### Baseline & Statistical
 - **Baseline**: Naive, Seasonal Naive
 - **Statistical**: ARIMA, ETS
-- **ML**: XGBoost, LightGBM
 
-## 🔧 Configuration
+### Machine Learning
+- **Gradient Boosting**: XGBoost, LightGBM, CatBoost
+- **Linear**: ElasticNet
+- **Kernel**: SVR
+
+### Deep Learning (Lightweight Transformers)
+| Model | Description | Best For |
+|-------|------------|----------|
+| **PatchTST** | Patch-based attention | Capturing local temporal patterns |
+| **DLinear** | Decomposition + Linear | Fast baseline, often beats Transformers |
+| **Autoformer** | Auto-Correlation + Decomposition | Periodic/seasonal patterns |
+| **iTransformer** | Inverted attention (across features) | Multivariate correlated features |
+| **TSTransformer** | Vanilla Transformer encoder | Simple Transformer baseline |
+
+### Foundation Models (Pre-trained)
+| Model | Source | Description |
+|-------|--------|------------|
+| **Chronos** | Amazon | T5-based probabilistic tokenized model |
+| **Lag-Llama** | TS Foundation Models | LLM-inspired univariate probabilistic |
+| **Moirai** | Salesforce | Universal multi-scale forecaster |
+| **Timer** | Tsinghua | Generative pre-trained Transformer |
+
+## 🔧 Fine-tuning
+
+The `TransformerFineTuner` provides production-quality fine-tuning:
+
+```python
+from src.training.finetuner import TransformerFineTuner
+
+finetuner = TransformerFineTuner(
+    model=model,
+    lr=5e-5,
+    epochs=10,
+    warmup_steps=100,
+    grad_accum_steps=2,
+    use_amp=True,  # Mixed precision
+)
+train_loader, val_loader = finetuner.prepare_data(df, feature_cols)
+results = finetuner.finetune(train_loader, val_loader)
+```
+
+## ⚙️ Configuration
 
 Edit `configs/commodities.yaml` to add/modify commodities.
 Edit `configs/model_config.yaml` for model hyperparameters.

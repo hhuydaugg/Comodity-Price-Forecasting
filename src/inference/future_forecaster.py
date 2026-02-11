@@ -124,18 +124,28 @@ class FutureForecaster:
             current_date = current_date + timedelta(days=1)
             current_date = self._next_business_day(current_date)
             
-            # Get features from the last row of working data
-            X_latest = work_df[feature_cols].iloc[[-1]]
+            # Get features
+            if hasattr(model, "seq_len"):
+                # For transformers, get the sequence window
+                # Maximize available history up to seq_len
+                sl = getattr(model, "seq_len") 
+                X_latest = work_df[feature_cols].iloc[-sl:]
+            else:
+                # For ML models, get only the last row
+                X_latest = work_df[feature_cols].iloc[[-1]]
             
             # Check for NaN in features
             if X_latest.isna().any().any():
-                nan_cols = X_latest.columns[X_latest.isna().any()].tolist()
-                logger.warning(f"Day {day}: NaN in features {nan_cols[:3]}..., filling with 0")
+                # nan_cols = X_latest.columns[X_latest.isna().any()].tolist()
+                # logger.warning(f"Day {day}: NaN in features, filling with 0")
                 X_latest = X_latest.fillna(0)
             
             # Predict
             try:
-                pred = float(model.predict(X=X_latest)[0])
+                if hasattr(model, "predict_single"):
+                    pred = model.predict_single(X_latest)
+                else:
+                    pred = float(model.predict(X=X_latest)[0])
             except Exception as e:
                 logger.error(f"Prediction failed at day {day}: {e}")
                 break

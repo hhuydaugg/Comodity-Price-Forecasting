@@ -91,6 +91,88 @@ models:
       C: 100.0
       epsilon: 0.1
 
+  # Transformer models (Deep Learning)
+  transformer:
+    patchtst:
+      enabled: true
+      params:
+        seq_len: 60
+        patch_len: 10
+        d_model: 64
+        n_heads: 4
+        n_layers: 2
+        dropout: 0.1
+        epochs: 50
+        lr: 0.001
+        batch_size: 32
+        patience: 10
+        
+    tstransformer:
+      enabled: false
+      params:
+        seq_len: 60
+        d_model: 64
+        epochs: 50
+
+    itransformer:
+      enabled: false
+      params:
+        seq_len: 60
+        d_model: 64
+        epochs: 50
+
+    dlinear:
+      enabled: true
+      params:
+        seq_len: 60
+        moving_avg_kernel: 25
+        individual: false
+        epochs: 50
+        lr: 0.001
+        batch_size: 32
+        patience: 10
+
+    autoformer:
+      enabled: false
+      params:
+        seq_len: 60
+        d_model: 64
+        n_heads: 4
+        n_layers: 2
+        moving_avg_kernel: 25
+        epochs: 50
+
+  # Pre-trained models (Foundation Models)
+  pretrained:
+    chronos:
+      enabled: true
+      params:
+        model_id: "amazon/chronos-t5-small"
+        finetune_epochs: 0
+        context_length: 512
+        
+    lag_llama:
+      enabled: false
+      params:
+        prediction_length: 30
+        context_length: 512
+        num_samples: 100
+
+    moirai:
+      enabled: false
+      params:
+        model_id: "Salesforce/moirai-1.1-R-small"
+        prediction_length: 30
+        context_length: 512
+        num_samples: 100
+
+    timer:
+      enabled: false
+      params:
+        model_id: "thuml/timer-base-84m"
+        context_length: 672
+        prediction_length: 96
+
 # Evaluation metrics
 evaluation:
   primary_metric: mase  # mae | rmse | mape | mase | smape
