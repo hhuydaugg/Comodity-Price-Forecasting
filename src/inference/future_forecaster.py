@@ -143,9 +143,10 @@ class FutureForecaster:
             # Predict
             try:
                 if hasattr(model, "predict_single"):
-                    pred = model.predict_single(X_latest)
+                    pred_raw = model.predict_single(X_latest)
                 else:
-                    pred = float(model.predict(X=X_latest)[0])
+                    pred_raw = model.predict(X=X_latest)
+                pred = self._to_scalar_prediction(pred_raw)
             except Exception as e:
                 logger.error(f"Prediction failed at day {day}: {e}")
                 break
@@ -180,14 +181,23 @@ class FutureForecaster:
             # Recalculate features for the new row
             work_df = self._recalculate_features(work_df, feature_cols)
         
-        result = pd.DataFrame(forecasts)
-        
+        result = pd.DataFrame(
+            forecasts,
+            columns=["date", "predicted_price", "ci_lower", "ci_upper", "day_ahead"],
+        )
+
+        if result.empty:
+            logger.warning(
+                f"Forecast failed for {commodity_id}: no predictions generated."
+            )
+            return result
+
         logger.info(
             f"Forecast complete: {len(result)} days, "
             f"last predicted price: {result['predicted_price'].iloc[-1]:.2f} "
             f"({((result['predicted_price'].iloc[-1] / last_price) - 1) * 100:+.2f}%)"
         )
-        
+
         return result
     
     def _next_business_day(self, date: pd.Timestamp) -> pd.Timestamp:
@@ -273,6 +283,14 @@ class FutureForecaster:
                     pass
         
         return df
+
+    @staticmethod
+    def _to_scalar_prediction(prediction: Union[np.ndarray, list, float, int]) -> float:
+        """Convert model output (scalar/array/list) to a single float prediction."""
+        arr = np.asarray(prediction)
+        if arr.size == 0:
+            raise ValueError("Model returned empty prediction output")
+        return float(arr.reshape(-1)[-1])
 
 
 def forecast_future(

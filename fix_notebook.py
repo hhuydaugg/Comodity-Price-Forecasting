@@ -1,7 +1,8 @@
 import json
 import os
+from pathlib import Path
 
-nb_path = "d:/Work/Comodity-Price-Forecasting/notebook_demo_v2.ipynb"
+nb_path = Path(__file__).resolve().parent / "notebook_demo_v2.ipynb"
 
 try:
     print(f"Reading notebook from {nb_path}...")

@@ -4,11 +4,10 @@ Batch Predictor for Commodity Price Forecasting
 Loads trained models and generates predictions for production use.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Literal, Optional, Union
+from typing import Dict, List, Literal, Optional
 
-import numpy as np
 import pandas as pd
 import yaml
 from loguru import logger
@@ -32,6 +31,7 @@ from src.models.pretrained_models import (
 from src.ingestion.loader import CommodityLoader
 from src.preprocessing.cleaner import DataCleaner
 from src.features.generator import FeatureGenerator
+from src.inference.future_forecaster import FutureForecaster
 
 
 class BatchPredictor:
@@ -171,6 +171,10 @@ class BatchPredictor:
         """
         if horizons is None:
             horizons = self.model_config.get("forecast", {}).get("horizons", [1, 7, 30])
+
+        unique_horizons = sorted({int(h) for h in horizons if int(h) > 0})
+        if not unique_horizons:
+            raise ValueError("horizons must contain at least one positive integer")
         
         # Load model if not already loaded
         if commodity_id not in self._models or self._models[commodity_id].name.lower() != model_type.lower():
@@ -181,6 +185,13 @@ class BatchPredictor:
         
         # Load and prepare recent data
         df = self.loader.load_commodity(commodity_id)
+        if as_of_date is not None:
+            cutoff = pd.to_datetime(as_of_date)
+            df = df[df["date"] <= cutoff].reset_index(drop=True)
+            if len(df) == 0:
+                raise ValueError(
+                    f"No data available for {commodity_id} up to as_of_date={as_of_date}"
+                )
         df = self.cleaner.clean(df)
         df = self.feature_generator.generate(df)
         
@@ -196,29 +207,64 @@ class BatchPredictor:
         latest = df_clean.iloc[-1]
         latest_date = latest["date"]
         latest_price = latest["close"]
-        
-        # Generate predictions for each horizon
+
+        # Use iterative forecasting so each horizon reflects recursive updates.
+        forecaster = FutureForecaster(
+            loader=self.loader,
+            cleaner=self.cleaner,
+            feature_generator=self.feature_generator,
+        )
+        max_horizon = max(unique_horizons)
+        future_df = forecaster.forecast(
+            model=model,
+            commodity_id=commodity_id,
+            n_days=max_horizon,
+            feature_cols=feature_cols,
+            base_df=df,
+        )
+
+        if future_df.empty:
+            logger.warning(f"No forecasts generated for {commodity_id}")
+            return pd.DataFrame(
+                columns=[
+                    "commodity_id",
+                    "prediction_date",
+                    "as_of_date",
+                    "horizon",
+                    "target_date",
+                    "prediction",
+                    "last_close",
+                    "predicted_change_pct",
+                ]
+            )
+
+        prediction_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         results = []
-        X = df_clean[feature_cols].iloc[[-1]]  # Single row DataFrame
-        
-        for h in horizons:
-            try:
-                # For multi-step ahead, we need to iterate (simplified version)
-                pred = model.predict(X=X)[0]
-                
-                results.append({
+        for h in unique_horizons:
+            row = future_df.loc[future_df["day_ahead"] == h]
+            if row.empty:
+                logger.warning(
+                    f"Missing forecast output for {commodity_id} at horizon={h}"
+                )
+                continue
+
+            pred = float(row["predicted_price"].iloc[0])
+            target_date = pd.Timestamp(row["date"].iloc[0]).strftime("%Y-%m-%d")
+            results.append(
+                {
                     "commodity_id": commodity_id,
-                    "prediction_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "prediction_date": prediction_timestamp,
                     "as_of_date": str(latest_date),
                     "horizon": h,
-                    "target_date": (pd.Timestamp(latest_date) + timedelta(days=h)).strftime("%Y-%m-%d"),
-                    "prediction": float(pred),
+                    "target_date": target_date,
+                    "prediction": pred,
                     "last_close": float(latest_price),
-                    "predicted_change_pct": float((pred - latest_price) / latest_price * 100),
-                })
-            except Exception as e:
-                logger.error(f"Prediction failed for horizon {h}: {e}")
-        
+                    "predicted_change_pct": float(
+                        (pred - latest_price) / latest_price * 100
+                    ),
+                }
+            )
+
         return pd.DataFrame(results)
     
     def predict_all(
